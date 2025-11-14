@@ -297,38 +297,41 @@ def GenerateFromTypeLibSpec(
             info.clsid, info.lcid, info.major, info.minor
         )
 
-        if file is None:
-            full_name = os.path.join(gencache.GetGeneratePath(), this_name)
-            if bForDemand:
-                try:
-                    os.unlink(full_name + ".py")
-                except OSError:
-                    pass
-                try:
-                    os.unlink(full_name + ".pyc")
-                except OSError:
-                    pass
-                try:
-                    os.unlink(full_name + ".pyo")
-                except OSError:
-                    pass
-                if not os.path.isdir(full_name):
-                    os.mkdir(full_name)
-                outputName = os.path.join(full_name, "__init__.py")
-            else:
-                outputName = full_name + ".py"
-            fileUse = gen.open_writer(outputName)
-            progress.LogBeginGenerate(outputName)
-        else:
-            fileUse = file
-
-        worked = False
-        try:
-            gen.generate(fileUse, bForDemand)
-            worked = True
-        finally:
+        with gencache.ModuleMutex(this_name, lock=False) as acquire_mutex:
             if file is None:
-                with gencache.ModuleMutex(this_name):
+                full_name = os.path.join(gencache.GetGeneratePath(), this_name)
+                if bForDemand:
+                    # Acquire the mutex before removing any files
+                    acquire_mutex()
+                    try:
+                        os.unlink(full_name + ".py")
+                    except OSError:
+                        pass
+                    try:
+                        os.unlink(full_name + ".pyc")
+                    except OSError:
+                        pass
+                    try:
+                        os.unlink(full_name + ".pyo")
+                    except OSError:
+                        pass
+                    if not os.path.isdir(full_name):
+                        os.mkdir(full_name)
+                    outputName = os.path.join(full_name, "__init__.py")
+                else:
+                    outputName = full_name + ".py"
+                fileUse = gen.open_writer(outputName)
+                progress.LogBeginGenerate(outputName)
+            else:
+                fileUse = file
+
+            worked = False
+            try:
+                gen.generate(fileUse, bForDemand)
+                worked = True
+            finally:
+                if file is None:
+                    acquire_mutex()
                     gen.finish_writer(outputName, fileUse, worked)
         importlib.invalidate_caches()
         if bToGenDir:

@@ -137,19 +137,34 @@ def _LoadDicts():
 
 
 @contextlib.contextmanager
-def ModuleMutex(module_name):
+def ModuleMutex(module_name, lock=True):
     """Given the output of GetGeneratedFilename, acquire a named mutex for that module
 
     This is required so that writes (generation) don't interfere with each other and with reads (import)
+
+    If lock is False the mutex is not initially acquired. The context manager yields a function that
+    can be called to acquire the mutex when needed.
     """
     mutex = win32event.CreateMutex(None, False, module_name)
     with contextlib.closing(mutex):
-        # acquire mutex
-        win32event.WaitForSingleObject(mutex, win32event.INFINITE)
+        # function that will acquire the mutex when needed
+        locked = False
+        def aquire_mutex():
+            nonlocal locked
+            if not locked:
+                win32event.WaitForSingleObject(mutex, win32event.INFINITE)
+                locked = True
+
+        # acquire mutex if we should be locked initially
+        if lock:
+            aquire_mutex()
+
         try:
-            yield
+            # yield the acquire mutex function for cases where the mutex is not acquired initially
+            yield aquire_mutex
         finally:
-            win32event.ReleaseMutex(mutex)
+            if locked:
+                win32event.ReleaseMutex(mutex)
 
 
 def GetGeneratedFileName(clsid, lcid, major, minor):
